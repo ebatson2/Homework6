@@ -1,0 +1,302 @@
+---
+title: "Homework6"
+format: html
+editor: visual
+author: Elizabeth Batson
+---
+
+# Task 1: Conceptual Questions
+
+1.  What is the purpose of the lapply() function? What is the equivalent purrr function?
+
+    lapply() is used to apply a function accross the rows or columns of an input, where the input data is in the form of a list. The output is also in a list. The equivalent purrr function is map().
+
+2.  Suppose we have a list called my_list. Each element of the list is a numeric data frame (all columns are numeric). We want use lapply() to run the code cor(numeric_matrix, method = "kendall") on each element of the list. Write code to do this below! (I’m really trying to ask you how you specify method = "kendall" when calling lapply())
+
+    lapply(X=my_list, FUN=cor, method="kendall")
+
+3.  What are two advantages of using purrr functions instead of the BaseR apply family?
+
+    purrr functions are more consistent syntax-wise, such as with their function names and function inputs. Function inputs can also be made more concise by using anonymous functions.
+
+4.  What is a side-effect function?
+
+    A side-effect function does not mutate the data in the program, but accomplishes some other task, e.g. writing to file.
+
+5.  Why can you name a variable sd in a function and not cause any issues with the sd function?
+
+    Because the scope of the sd variable in the function is the function itself. The temporary environment created while the function is running is cleaned up after the function runs, so the sd variable defined within the function no longer exists.
+
+# Task 2: Writing R Functions
+
+Basic function that takes in a vector of responses and a vector of predictions and outputs the RMSE:
+
+```{r}
+getRMSE <- function(resp, pred, ...){
+  return ((mean(..., (resp-pred)**2))**(1/2))
+}
+```
+
+Create response values and predictions and test RMSE function:
+
+```{r}
+# generate data
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+# test RMSE function
+getRMSE(resp, pred)
+
+# insert NA values into resp
+resp <- replace(resp, c(50, 75), NA_real_)
+
+# use function with and without NA handling
+getRMSE(resp, pred)
+getRMSE(resp, pred, na.rm = TRUE)
+```
+
+Function that takes in a vector of responses and a vector of predictions and outputs the MAE:
+
+```{r}
+getMAE <- function(resp, pred, ...){
+  return (mean(..., abs(resp-pred)));
+}
+```
+
+Create response values and predictions and test MAE function:
+
+```{r}
+# generate data
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+# test MAE function
+getMAE(resp, pred)
+
+# insert NA values into resp
+resp <- replace(resp, c(50, 75), NA_real_)
+
+# use function with and without NA handling
+getMAE(resp, pred)
+getMAE(resp, pred, na.rm = TRUE)
+```
+
+Wrapper function to call getRMSE and getMAE:
+
+```{r}
+metrics_options <- c("both", "RMSE", "MAE")
+
+calc_error <- function(resp, pred, metrics="both", ...){
+  
+  # ---------------------input validation---------------------
+  if(!(is.vector(resp) && is.atomic(resp) && is.numeric(resp))) {
+    cat("Response vector must be an atomic vector with numeric values.")
+    return()
+  }
+  if(!(is.vector(pred) && is.atomic(pred) && is.numeric(pred))) {
+    cat("Prediction vector must be an atomic vector with numeric values.")
+    return()
+  }
+  
+  if(!(metrics %in% metrics_options)) {
+    cat("metrics must take one of the following character string values: both, RMSE, MAE")
+    return()
+  }
+  # ---------------------input validation---------------------
+
+  switch (metrics,
+    both = {
+      RMSE <- getRMSE(resp, pred, ...)
+      MAE <- getMAE(resp, pred, ...)
+      
+      return(list(RMSE=RMSE, MAE=MAE))
+    },
+    
+    RMSE = {
+      RMSE <- getRMSE(resp, pred, ...)
+
+      return(list(RMSE=RMSE))
+    },
+    
+    MAE = {
+      MAE <- getMAE(resp, pred, ...)
+
+      return(list(MAE=MAE))
+    }
+  )
+}
+```
+
+Create response values and predictions and test calc_error function:
+
+```{r}
+# generate data
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+# test calc_error function
+calc_error(resp, pred, metrics="RMSE")
+calc_error(resp, pred, metrics="MAE")
+calc_error(resp, pred, metrics="both")
+
+# insert NA values into resp
+resp <- replace(resp, c(50, 75), NA_real_)
+
+# use function with and without NA handling
+calc_error(resp, pred)
+calc_error(resp, pred, na.rm = TRUE)
+
+# pass incorrect data
+pred_incorrect <- replace(pred, c(40), "word")
+no_output <- calc_error(resp, pred_incorrect)
+```
+
+# Task 3: Querying an API and a Tidy-Style Function
+
+Load libraries:
+
+```{r}
+#| output: FALSE
+
+library(httr)
+library(purrr)
+library(dplyr)
+library(lubridate)
+```
+
+Fetch data from API and parse, grab first articles element:
+
+```{r}
+api_key="e3fc7755a72448f4b66440378abad7b6"
+
+response <- GET(paste0("https://newsapi.org/v2/everything?q=election&from=2024-10-20&sortBy=publishedAt&apiKey=", api_key))
+data <- content(response)
+
+# access 1st articles element
+pluck(data$articles, 1)
+
+# first column: source info
+pluck(data$articles, 1)[1]
+```
+
+Function to query API:
+
+```{r}
+query_api <- function(subject, start_date, api_key){
+
+  response <- GET(paste0("https://newsapi.org/v2/everything?q=", 
+                         subject,
+                         "&from=",
+                         start_date,
+                         "6&sortBy=publishedAt&apiKey=", 
+                         api_key))
+  
+  return(content(response)$articles)
+}
+```
+
+Execute and save 2 fetches:
+
+```{r}
+election_data <- query_api(subject="election", start_date="2024-09-26", api_key="e3fc7755a72448f4b66440378abad7b6")
+hurricane_data <- query_api(subject="hurricane", start_date="2024-09-26", api_key="e3fc7755a72448f4b66440378abad7b6")
+```
+
+Function to create a usable tibble from api data:
+
+```{r}
+create_tibble <- function(api_data){
+  
+  # get the names of all the columns
+  col_names <- names(api_data[[1]][-1])
+
+  # destructure source columns info first
+  sourceName <- map(api_data, pluck, "source", "name")
+  sourceName[sapply(sourceName, is.null)] <- NA
+  sourceName <- unlist(sourceName)
+  
+  sourceId <- map(api_data, pluck, "source", "id")
+  sourceId[sapply(sourceId, is.null)] <- NA
+  sourceId <- unlist(sourceId)
+  
+  # initialize tibble
+  return_tibble <- tibble(sourceName=sourceName, sourceId=sourceId)
+  
+  # clean up data for the rest of the columns
+  for (col in col_names){
+    col_data <- map(api_data, pluck, col)
+    col_data[sapply(col_data, is.null)] <- NA
+    col_data <- unlist(col_data)
+    return_tibble <- mutate(return_tibble, !!(col) := col_data)
+  }
+  
+  return(return_tibble)
+}
+```
+
+Get tibbles for election and hurricane data:
+
+```{r}
+election_tibble <- create_tibble(election_data)
+election_tibble
+
+hurricane_tibble <- create_tibble(hurricane_data)
+hurricane_tibble
+```
+
+1-way contingency table for source name (election data):
+
+```{r}
+table(election_tibble$sourceName)
+```
+
+Function for reformatting the publishedAt column and adding the pub_diff column:
+
+```{r}
+handle_publishedAt <- function(tb){
+  
+  tb <- tb |>
+    mutate(publishedAt=ymd_hms(publishedAt)) |>
+    arrange(publishedAt) |>
+    mutate(pub_diff=(publishedAt - lag(publishedAt)))
+  
+  return(tb)
+}
+```
+
+Use function on both tibbles:
+
+```{r}
+election_tibble <- handle_publishedAt(election_tibble)
+hurricane_tibble <- handle_publishedAt(hurricane_tibble)
+
+election_tibble
+hurricane_tibble
+```
+
+Analysis of publishedAt and pub_diff columns:
+
+```{r}
+get_date_metrics <- function(tb){
+  
+  tb <- select(tb, publishedAt, pub_diff)
+  
+  metrics <- map(tb, \(x) {return(list(mean=mean(x, na.rm=TRUE), sd=sd(x, na.rm=TRUE), median=median(x, na.rm=TRUE)))})
+  
+  return(metrics)
+  
+}
+
+get_date_metrics(election_tibble)
+get_date_metrics(hurricane_tibble)
+```
+
